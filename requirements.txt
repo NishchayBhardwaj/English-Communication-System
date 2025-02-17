@@ -1,0 +1,7 @@
+# Run these libraries before accessing model
+flask 
+flask-cors 
+groq 
+speechrecognition 
+transformers 
+textblob
