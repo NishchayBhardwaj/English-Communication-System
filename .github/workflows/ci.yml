@@ -1,9 +1,9 @@
-name: Speech Recognition Model
+name: Pull and Deploy
 
 on:
   push:
     branches:
-      - main # Runs when code is pushed to the main branch
+      - master
 
 jobs:
   deploy:
@@ -13,17 +13,8 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v3
 
-      - name: Set up Python
-        uses: actions/setup-python@v3
-        with:
-          python-version: "3.11"
+      - name: Create .env File
+        run: echo "${{ secrets.ENV_FILE }}" > .env
 
-      - name: Create .env file from GitHub Secrets
-        run: |
-          echo "${{ secrets.ENV_FILE }}" > .env
-
-      - name: Build Docker Image
-        run: docker build -t speech-recognition-app .
-
-      - name: Run Docker Container
-        run: docker run -d --env-file .env speech-recognition-app
+      - name: Run Your App
+        run: python model/speech-recognition.py
