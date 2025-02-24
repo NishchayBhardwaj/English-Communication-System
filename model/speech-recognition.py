@@ -14,7 +14,7 @@ groq_api_key=os.environ.get("GROQ_API_KEY")
 client = Groq(api_key=groq_api_key)
 
 # Initialize NLP model for grammar and fluency analysis
-grammar_checker = pipeline("text2text-generation", model="facebook/bart-large-cnn")
+grammar_checker = pipeline("text2text-generation", model="prithivida/grammar_error_correcter_v1")
 
 def get_groq_feedback(text):
     """Send user speech to Groq chatbot for better phrasing suggestions"""

@@ -5,3 +5,11 @@ groq
 speechrecognition 
 transformers 
 textblob
+termcolor
+python-dotenv
+torch 
+torchvision 
+torchaudio
+tiktoken 
+protobuf
+happytransformer
