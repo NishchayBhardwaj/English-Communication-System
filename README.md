@@ -30,7 +30,7 @@ Ensure you have the following dependencies installed before running the setup:
 ## Usage
 After setup, run the application with:
 ```sh
-python main.py
+python speech_recognition.py
 ```
 
 ## Contributing
