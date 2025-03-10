@@ -62,7 +62,8 @@ class CommunicationAssessmentApp:
     def process_input(self, audio_file):
         """Process audio input and return comprehensive analysis"""
         if audio_file is None:
-            return [("Please provide an audio input.", "")], None, None, None, None
+            return [("Grammar Analysis:", "Please provide an audio input."), 
+                   ("Grammar Score:", "0.00")], [("", "")], None, None, None, ""
 
         try:
             # Get transcribed text and initial feedback (optimized with async)
@@ -73,58 +74,76 @@ class CommunicationAssessmentApp:
             vocab_analysis = self.vocabulary_analyzer.analyze_vocabulary(transcribed_text)
             pron_analysis = self.pronunciation_analyzer.analyze_pronunciation(audio_file)
 
+            # Calculate grammar score more accurately
+            grammar_issues = chat_history[1][1]
+            grammar_corrections = chat_history[2][1]
+            
+            # Force a non-zero grammar score based on the corrections
+            if "No major issues found" in grammar_issues:
+                grammar_score = 0.95  # High score for no issues
+                issue_count = 0
+            else:
+                # Count issues by splitting on commas
+                issue_list = [issue.strip() for issue in grammar_issues.split(',') if issue.strip()]
+                issue_count = len(issue_list)
+                
+                # Calculate score based on issue count and text length
+                words_count = len(transcribed_text.split())
+                if words_count > 0:
+                    # Normalize by text length (longer text can have more issues)
+                    normalized_issues = min(issue_count / (words_count / 10), 1.0)
+                    grammar_score = max(0.1, 1.0 - normalized_issues)
+                else:
+                    grammar_score = 0.1  # Minimum score
+            
             # Calculate overall scores
             scores = [
                 pron_analysis['pronunciation_score'],
-                float(len(chat_history[1][1].split(',')) == 0),  # Grammar score
+                grammar_score,  # Improved grammar score
                 vocab_analysis['lexical_diversity'],
-                pron_analysis['fluency_score']  # New fluency score
+                pron_analysis['fluency_score']
             ]
 
             # Create visualizations
             radar_chart = self.create_radar_chart(scores)
             vocab_chart = self.create_vocabulary_chart(vocab_analysis)
 
-            # Format the complete response
-            complete_analysis = [
-                ("Transcription:", transcribed_text),
+            # Format the complete response - split into two parts for UI
+            # Remove transcription from language analysis
+            language_analysis = [
                 ("Grammar Analysis:", chat_history[2][1]),
-                ("Vocabulary Analysis:", f"Lexical Diversity: {vocab_analysis['lexical_diversity']:.2f}\nUnique Words: {vocab_analysis['unique_words']}"),
+                ("Grammar Score:", f"{grammar_score:.2f}")
+            ]
+            
+            performance_analysis = [
+                ("Vocabulary Analysis:", f"Lexical Diversity: {vocab_analysis['lexical_diversity']:.2f}\nHigh-Quality Complex Words: {', '.join(vocab_analysis['unique_words']) if vocab_analysis['unique_words'] else 'None detected'}"),
                 ("Pronunciation Score:", f"{pron_analysis['pronunciation_score']:.2f}"),
                 ("Improvement Suggestion:", chat_history[3][1])
             ]
 
-            # Create detailed analysis text
-            detailed_analysis = f"""
-            ## Communication Assessment Report
-            Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+            # Create a formatted report for the report_box
+            report_text = f"""Communication Assessment Report
+Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 
-            ### Overall Scores
-            - Pronunciation: {pron_analysis['pronunciation_score']:.2f}
-            - Grammar: {float(len(chat_history[1][1].split(',')) == 0):.2f}
-            - Vocabulary: {vocab_analysis['lexical_diversity']:.2f}
-            - Fluency: {pron_analysis['fluency_score']:.2f}
+OVERALL SCORES
+Pronunciation: {pron_analysis['pronunciation_score']:.2f}
+Grammar: {grammar_score:.2f}
+Vocabulary: {vocab_analysis['lexical_diversity']:.2f}
+Fluency: {pron_analysis['fluency_score']:.2f}
 
-            ### Detailed Analysis
-            1. Grammar Corrections:
-            {chat_history[2][1]}
+KEY FINDINGS
+• Grammar: {issue_count} issues found
+• Complex Words Used: {len(vocab_analysis['unique_words'])}
+• Pronunciation Quality: {'Excellent' if pron_analysis['pronunciation_score'] > 0.8 else 'Good' if pron_analysis['pronunciation_score'] > 0.6 else 'Needs Improvement'}
+• Speech Fluency: {'Excellent' if pron_analysis['fluency_score'] > 0.8 else 'Good' if pron_analysis['fluency_score'] > 0.6 else 'Needs Improvement'}
+"""
 
-            2. Vocabulary Usage:
-            - Unique words: {vocab_analysis['unique_words']}
-            - Lexical diversity: {vocab_analysis['lexical_diversity']:.2f}
-            - Sophistication: {vocab_analysis['sophistication']:.2f}
-            - Context appropriateness: {vocab_analysis['context_appropriateness']:.2f}
-
-            3. Pronunciation Details:
-            - Confidence score: {pron_analysis['confidence_scores']:.2f}
-            - Stress pattern score: {pron_analysis['stress_patterns']:.2f}
-            - Fluency score: {pron_analysis['fluency_score']:.2f}
-            """
-
-            return complete_analysis, radar_chart, vocab_chart, detailed_analysis, transcribed_text
+            return language_analysis, performance_analysis, radar_chart, vocab_chart, transcribed_text, report_text
 
         except Exception as e:
-            return [("Error processing input:", str(e))], None, None, None, None
+            print(f"Error in process_input: {str(e)}")
+            return [("Grammar Analysis:", "Error occurred"), 
+                   ("Grammar Score:", "0.00")], [("Error:", "Analysis failed")], None, None, None, "Error generating report"
 
     def create_interface(self):
         """Create and return the Gradio interface"""
@@ -148,21 +167,31 @@ class CommunicationAssessmentApp:
 
             with gr.Row():
                 with gr.Column(scale=1):
-                    chatbot = gr.Chatbot(
-                        label="Quick Analysis",
-                        height=400
+                    language_chatbot = gr.Chatbot(
+                        label="Language Analysis",
+                        height=500
+                    )
+                    performance_chatbot = gr.Chatbot(
+                        label="Performance Analysis",
+                        height=500
                     )
                 with gr.Column(scale=1):
                     radar_plot = gr.Plot(label="Skills Assessment")
                     vocab_plot = gr.Plot(label="Vocabulary Analysis")
             
             with gr.Row():
-                detailed_report = gr.Markdown(label="Detailed Report")
+                with gr.Column(scale=1):
+                    # Hide the Communication Assessment Report title since it's already in the content
+                    report_box = gr.Textbox(
+                        label="Assessment Summary",
+                        interactive=False,
+                        lines=15
+                    )
 
             audio_input.change(
                 fn=self.process_input,
                 inputs=[audio_input],
-                outputs=[chatbot, radar_plot, vocab_plot, detailed_report, transcription]
+                outputs=[language_chatbot, performance_chatbot, radar_plot, vocab_plot, transcription, report_box]
             )
 
         return interface

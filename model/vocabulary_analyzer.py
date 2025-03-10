@@ -156,11 +156,17 @@ class VocabularyAnalyzer:
             # Sort complex words by complexity
             complex_words.sort(key=lambda x: x['complexity'], reverse=True)
             
+            # Extract high-quality complex words (C1 and C2 level)
+            high_quality_words = [
+                word['word'] for word in complex_words 
+                if word['cefr_level'] in ['C1', 'C2'] or word['complexity'] > 0.75
+            ]
+            
             return {
                 "lexical_diversity": len(set(words)) / len(words),
                 "sophistication": np.mean(list(word_complexities.values())) if word_complexities else 0,
                 "context_appropriateness": self._analyze_context(doc),
-                "unique_words": list(set(words)),
+                "unique_words": high_quality_words[:10],  # Top 10 high-quality complex words
                 "total_words": len(words),
                 "cefr_levels": cefr_levels,
                 "complex_words": complex_words[:10]  # Top 10 most complex words

@@ -1,27 +1,42 @@
 import speech_recognition as sr
 from groq import Groq
-from transformers import pipeline
+from transformers import pipeline, AutoModelForSeq2SeqLM, AutoTokenizer
 from textblob import TextBlob
 from dotenv import load_dotenv
 import os
+import re
 
 load_dotenv()
 
 class SpeechProcessor:
     def __init__(self):
         self.groq_client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
-        self.grammar_checker = self._initialize_model()
+        self.grammar_checker = self._initialize_grammar_model()
         self.recognizer = sr.Recognizer()
 
-    def _initialize_model(self):
-        """Initialize the grammar checker model"""
+    def _initialize_grammar_model(self):
+        """Initialize a better grammar checker model"""
         try:
-            return pipeline("text2text-generation", 
-                          model="prithivida/grammar_error_correcter_v1",
-                          device="cpu")
+            # Use T5-based grammar correction model instead
+            model_name = "vennify/t5-base-grammar-correction"
+            tokenizer = AutoTokenizer.from_pretrained(model_name)
+            model = AutoModelForSeq2SeqLM.from_pretrained(model_name)
+            
+            return pipeline(
+                "text2text-generation",
+                model=model,
+                tokenizer=tokenizer,
+                max_length=512
+            )
         except Exception as e:
             print(f"Error initializing grammar model: {str(e)}")
-            return None
+            # Fallback to the original model if the new one fails
+            try:
+                return pipeline("text2text-generation", 
+                              model="prithivida/grammar_error_correcter_v1",
+                              device="cpu")
+            except:
+                return None
 
     def get_groq_feedback(self, text):
         """Send user speech to Groq chatbot for better phrasing suggestions"""
@@ -29,7 +44,7 @@ class SpeechProcessor:
             response = self.groq_client.chat.completions.create(
                 model="llama-3.3-70b-versatile",
                 messages=[
-                    {"role": "system", "content": "Provide real-time speaking improvement suggestions. Instead of 'I would like to say', use 'I prefer to'. Keep responses concise."},
+                    {"role": "system", "content": "You are an expert English language coach specializing in sophisticated grammar and vocabulary. Analyze the provided speech for grammar issues and suggest more elegant, complex phrasing where appropriate. Focus on transforming basic expressions into more sophisticated ones. Keep responses concise and actionable."},
                     {"role": "user", "content": text}
                 ],
                 temperature=0.5,
@@ -49,19 +64,45 @@ class SpeechProcessor:
             if self.grammar_checker is None:
                 return [], text
 
-            corrected_text = self.grammar_checker(text, max_length=100)[0]["generated_text"]
+            # Generate corrected text
+            corrected_text = self.grammar_checker(text, max_length=512)[0]["generated_text"]
             
-            # Highlight grammar/spelling mistakes using TextBlob
-            blob = TextBlob(text)
+            # Find specific grammar errors by comparing original and corrected text
+            original_sentences = self._split_into_sentences(text)
+            corrected_sentences = self._split_into_sentences(corrected_text)
+            
+            # Identify specific grammar issues
             mistakes = []
-            for word, tag in blob.tags:
-                if tag in ["NN", "VB", "JJ"] and word.lower() not in corrected_text.lower():
-                    mistakes.append(word)
-
+            for i, (orig, corr) in enumerate(zip(original_sentences, corrected_sentences)):
+                if orig.strip().lower() != corr.strip().lower():
+                    # Find specific differences
+                    orig_words = orig.split()
+                    corr_words = corr.split()
+                    
+                    # Check for word-level differences
+                    for j, (o_word, c_word) in enumerate(zip(orig_words, corr_words)):
+                        if o_word.lower() != c_word.lower():
+                            context = " ".join(orig_words[max(0, j-2):min(len(orig_words), j+3)])
+                            mistakes.append(f"'{o_word}' → '{c_word}' in '{context}'")
+                    
+                    # If no specific word differences found but sentences differ
+                    if not any(m for m in mistakes if f"in '{orig}'" in m):
+                        mistakes.append(f"Sentence structure: '{orig}' → '{corr}'")
+            
+            # If no specific issues found but text was corrected
+            if not mistakes and text.lower() != corrected_text.lower():
+                mistakes.append("General grammar and structure improvements")
+                
             return mistakes, corrected_text
         except Exception as e:
             print(f"Error analyzing text: {str(e)}")
             return [], text
+    
+    def _split_into_sentences(self, text):
+        """Split text into sentences more accurately"""
+        # Simple sentence splitting - can be improved
+        sentences = re.split(r'(?<=[.!?])\s+', text)
+        return sentences
 
     def process_audio(self, audio_file):
         """Process audio file and return analysis results"""
@@ -92,7 +133,7 @@ class SpeechProcessor:
                 # Update chat history with actual results
                 chat_history = [
                     ("You said:", text),
-                    ("Grammar Issues:", f"Potential mistakes in: {', '.join(mistakes) if mistakes else 'No major issues found'}"),
+                    ("Grammar Issues:", f"{', '.join(mistakes) if mistakes else 'No major issues found'}"),
                     ("Corrected Version:", grammar_feedback),
                     ("Improvement Suggestion:", chatbot_feedback)
                 ]
