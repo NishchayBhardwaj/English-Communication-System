@@ -1,14 +1,54 @@
 "use client";
 
-import React, { useState, useRef } from 'react';
-import { Mic, Type, Play, Pause, Save } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Mic, Type, Play, Pause, Save, CheckCircle } from 'lucide-react';
 
-export default function EnglishAssessmentPage() {
+// Text Correction Utility
+const correctText = (input) => {
+  if (!input) return '';
+  
+  // Basic correction rules
+  let corrected = input
+    // Capitalize first letter of the sentence
+    .replace(/^([a-z])/, (match) => match.toUpperCase())
+    
+    // Capitalize 'I'
+    .replace(/\bi\b/gi, 'I')
+    
+    // Add proper spacing after punctuation
+    .replace(/([.,!?])(\S)/g, '$1 $2')
+    
+    // Remove extra spaces
+    .replace(/\s+/g, ' ')
+    .trim();
+  
+  // Simple grammar and common mistake corrections
+  const corrections = [
+    { wrong: /\bi am\b/gi, right: 'I am' },
+    { wrong: /\bam fine\b/gi, right: 'am good' },
+    { wrong: /\bis working good\b/gi, right: 'is working well' },
+    { wrong: /\bwent in\b/gi, right: 'went to' },
+  ];
+  
+  corrections.forEach(({ wrong, right }) => {
+    corrected = corrected.replace(wrong, right);
+  });
+
+  // Add ending punctuation if missing
+  if (!/[.!?]$/.test(corrected)) {
+    corrected += '.';
+  }
+
+  return corrected;
+};
+
+export default function CompleteEnglishAssessmentPage() {
   // State management
   const [answerMode, setAnswerMode] = useState(null);
   const [isRecording, setIsRecording] = useState(false);
   const [audioRecording, setAudioRecording] = useState(null);
   const [textAnswer, setTextAnswer] = useState('');
+  const [correctedText, setCorrectedText] = useState('');
   const [currentQuestion, setCurrentQuestion] = useState({
     id: 1,
     text: "Describe a challenging situation you've faced at work or in your personal life and how you overcame it.",
@@ -18,6 +58,30 @@ export default function EnglishAssessmentPage() {
   // Audio recording references
   const mediaRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
+
+  // Real-time text correction
+  useEffect(() => {
+    if (answerMode !== 'text') return;
+    
+    // Debounce correction to avoid constant re-rendering
+    const timeoutId = setTimeout(() => {
+      const corrected = correctText(textAnswer);
+      setCorrectedText(corrected !== textAnswer ? corrected : '');
+    }, 300);
+
+    return () => clearTimeout(timeoutId);
+  }, [textAnswer, answerMode]);
+
+  // Handle text input
+  const handleTextInput = (e) => {
+    setTextAnswer(e.target.value);
+  };
+
+  // Apply correction
+  const applyCorrection = () => {
+    setTextAnswer(correctedText);
+    setCorrectedText('');
+  };
 
   // Handle audio recording
   const startRecording = async () => {
@@ -55,6 +119,7 @@ export default function EnglishAssessmentPage() {
     setAnswerMode(mode);
     // Reset previous answers
     setTextAnswer('');
+    setCorrectedText('');
     setAudioRecording(null);
   };
 
@@ -64,8 +129,8 @@ export default function EnglishAssessmentPage() {
     console.log('Saving answer:', {
       questionId: currentQuestion.id,
       answerMode,
-      textAnswer,
-      audioRecording
+      textAnswer: answerMode === 'text' ? textAnswer : null,
+      audioRecording: answerMode === 'audio' ? audioRecording : null
     });
     // TODO: Implement next question logic or submission
     alert('Answer saved! Proceeding to next question...');
@@ -111,13 +176,43 @@ export default function EnglishAssessmentPage() {
 
         {/* Text Answer Mode */}
         {answerMode === 'text' && (
-          <div>
+          <div className="space-y-4">
             <textarea 
               className="w-full h-48 p-4 border-2 border-gray-300 rounded-lg focus:outline-none focus:border-blue-500 transition"
               placeholder="Type your answer here..."
               value={textAnswer}
-              onChange={(e) => setTextAnswer(e.target.value)}
+              onChange={handleTextInput}
             />
+
+            {/* Text Correction Suggestion */}
+            {correctedText && correctedText !== textAnswer && (
+              <div className="bg-blue-50 border-l-4 border-blue-500 p-4 flex items-center justify-between">
+                <div>
+                  <p className="text-blue-800 font-semibold">Suggested Correction:</p>
+                  <p className="text-blue-700">{correctedText}</p>
+                </div>
+                <button 
+                  onClick={applyCorrection}
+                  className="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 transition flex items-center"
+                >
+                  <CheckCircle className="mr-2" />
+                  Apply
+                </button>
+              </div>
+            )}
+
+            {/* Save Button for Text Mode */}
+            {textAnswer.trim() !== '' && (
+              <div className="text-center">
+                <button 
+                  onClick={saveAnswer}
+                  className="bg-blue-500 text-white px-6 py-3 rounded-lg hover:bg-blue-600 transition flex items-center mx-auto"
+                >
+                  <Save className="mr-2" />
+                  Save Answer
+                </button>
+              </div>
+            )}
           </div>
         )}
 
@@ -173,19 +268,6 @@ export default function EnglishAssessmentPage() {
                 </div>
               </div>
             )}
-          </div>
-        )}
-
-        {/* Save Button for Text Mode */}
-        {answerMode === 'text' && textAnswer.trim() !== '' && (
-          <div className="mt-4 text-center">
-            <button 
-              onClick={saveAnswer}
-              className="bg-blue-500 text-white px-6 py-3 rounded-lg hover:bg-blue-600 transition flex items-center mx-auto"
-            >
-              <Save className="mr-2" />
-              Save Answer
-            </button>
           </div>
         )}
 
