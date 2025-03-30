@@ -146,4 +146,28 @@ class SpeechProcessor:
             return [("Error:", f"Could not process audio; {str(e)}")]
         except Exception as e:
             print(f"Error processing audio: {str(e)}")
-            return [("Error:", "An error occurred while processing the audio")] 
+            return [("Error:", "An error occurred while processing the audio")]
+
+    def process_text(self, text):
+        """Process text input and return feedback"""
+        try:
+            # Get grammar analysis
+            mistakes, corrected_text = self.analyze_text(text)
+            
+            # Get improvement suggestions from Groq
+            chatbot_feedback = self.get_groq_feedback(text)
+            
+            return [
+                ("Transcription:", text),
+                ("Grammar Issues:", ", ".join(mistakes) if mistakes else "No major issues found"),
+                ("Corrected Version:", corrected_text),
+                ("Improvement Suggestion:", chatbot_feedback)
+            ]
+        except Exception as e:
+            print(f"Error in process_text: {str(e)}")
+            return [
+                ("Transcription:", text),
+                ("Grammar Issues:", "Error analyzing grammar"),
+                ("Corrected Version:", text),
+                ("Improvement Suggestion:", "Unable to generate suggestions")
+            ] 

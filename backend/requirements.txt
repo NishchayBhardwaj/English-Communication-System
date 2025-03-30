@@ -1,6 +1,7 @@
 # Run these libraries before accessing model
-flask
-flask-cors
+flask==2.3.3
+flask-cors==4.0.0
+werkzeug==2.3.7
 groq
 SpeechRecognition
 transformers
@@ -23,3 +24,6 @@ matplotlib
 seaborn
 plotly
 scipy
+kaleido  # For saving plotly figures as images
+pydub  # For audio format conversion
+psutil  # For process management
