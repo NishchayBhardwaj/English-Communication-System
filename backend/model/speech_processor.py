@@ -1,23 +1,38 @@
-import speech_recognition as sr
+import torch
+from transformers import pipeline
+from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
 from groq import Groq
-from transformers import pipeline, AutoModelForSeq2SeqLM, AutoTokenizer
 from textblob import TextBlob
 from dotenv import load_dotenv
 import os
 import re
+from concurrent.futures import ThreadPoolExecutor
+from .scoring_analyzer import ScoringAnalyzer
 
 load_dotenv()
 
 class SpeechProcessor:
     def __init__(self):
+        # Use Faster-Whisper instead of regular Whisper
+        try:
+            from faster_whisper import WhisperModel
+            # Use tiny model for faster processing
+            self.speech_recognizer = WhisperModel("tiny", device="cpu", compute_type="int8")
+        except ImportError:
+            # Fallback to regular whisper with tiny model if faster-whisper not installed
+            self.speech_recognizer = pipeline(
+                "automatic-speech-recognition",
+                model="openai/whisper-tiny",
+                chunk_length_s=30
+            )
+            
         self.groq_client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
         self.grammar_checker = self._initialize_grammar_model()
-        self.recognizer = sr.Recognizer()
+        self.scoring_analyzer = ScoringAnalyzer()
 
     def _initialize_grammar_model(self):
         """Initialize a better grammar checker model"""
         try:
-            # Use T5-based grammar correction model instead
             model_name = "vennify/t5-base-grammar-correction"
             tokenizer = AutoTokenizer.from_pretrained(model_name)
             model = AutoModelForSeq2SeqLM.from_pretrained(model_name)
@@ -30,13 +45,32 @@ class SpeechProcessor:
             )
         except Exception as e:
             print(f"Error initializing grammar model: {str(e)}")
-            # Fallback to the original model if the new one fails
-            try:
-                return pipeline("text2text-generation", 
-                              model="prithivida/grammar_error_correcter_v1",
-                              device="cpu")
-            except:
-                return None
+            return None
+
+    def transcribe_audio(self, audio_file):
+        """Transcribe audio using Faster-Whisper"""
+        try:
+            if hasattr(self.speech_recognizer, 'transcribe'):
+                # Using Faster-Whisper
+                segments, _ = self.speech_recognizer.transcribe(
+                    audio_file,
+                    language="en",
+                    vad_filter=True,
+                    vad_parameters=dict(min_silence_duration_ms=500)
+                )
+                return " ".join([seg.text for seg in segments])
+            else:
+                # Using regular Whisper
+                result = self.speech_recognizer(
+                    audio_file,
+                    language="en",
+                    return_timestamps=False
+                )
+                return result["text"]
+                
+        except Exception as e:
+            print(f"Error in transcribe_audio: {str(e)}")
+            return ""
 
     def get_groq_feedback(self, text):
         """Send user speech to Groq chatbot for better phrasing suggestions"""
@@ -105,69 +139,121 @@ class SpeechProcessor:
         return sentences
 
     def process_audio(self, audio_file):
-        """Process audio file and return analysis results"""
+        """Process audio input and return comprehensive analysis"""
         try:
             if not audio_file:
                 return [("Error:", "No audio file provided")]
 
-            with sr.AudioFile(audio_file) as source:
-                # Adjust for longer audio files
-                audio = self.recognizer.record(source)
-                text = self.recognizer.recognize_google(audio)
-                
-                if not text:
-                    return [("Error:", "Could not transcribe audio")]
+            # Get transcription
+            text = self.transcribe_audio(audio_file)
+            
+            if not text:
+                return [("Error:", "Could not transcribe audio")]
 
-                # Initialize default responses
-                chat_history = [
-                    ("You said:", text),
-                    ("Grammar Issues:", "Analyzing..."),
-                    ("Corrected Version:", "Processing..."),
-                    ("Improvement Suggestion:", "Generating...")
-                ]
+            return self._process_input(text)
 
-                # Get analyses
-                mistakes, grammar_feedback = self.analyze_text(text)
-                chatbot_feedback = self.get_groq_feedback(text)
-                
-                # Update chat history with actual results
-                chat_history = [
-                    ("You said:", text),
-                    ("Grammar Issues:", f"{', '.join(mistakes) if mistakes else 'No major issues found'}"),
-                    ("Corrected Version:", grammar_feedback),
-                    ("Improvement Suggestion:", chatbot_feedback)
-                ]
-                
-                return chat_history
-                
-        except sr.UnknownValueError:
-            return [("Error:", "Could not understand the audio")]
-        except sr.RequestError as e:
-            return [("Error:", f"Could not process audio; {str(e)}")]
         except Exception as e:
             print(f"Error processing audio: {str(e)}")
             return [("Error:", "An error occurred while processing the audio")]
 
     def process_text(self, text):
-        """Process text input and return feedback"""
+        """Process text input and return comprehensive analysis"""
         try:
-            # Get grammar analysis
-            mistakes, corrected_text = self.analyze_text(text)
+            if not text:
+                return [("Error:", "No text provided")]
             
-            # Get improvement suggestions from Groq
-            chatbot_feedback = self.get_groq_feedback(text)
-            
-            return [
-                ("Transcription:", text),
-                ("Grammar Issues:", ", ".join(mistakes) if mistakes else "No major issues found"),
-                ("Corrected Version:", corrected_text),
-                ("Improvement Suggestion:", chatbot_feedback)
-            ]
+            return self._process_input(text)
+        
         except Exception as e:
             print(f"Error in process_text: {str(e)}")
+            return [("Error:", "An error occurred while processing the text")]
+
+    def _process_input(self, text):
+        """Common processing logic for both text and speech input"""
+        try:
+            # Get comprehensive analysis
+            scores = self.scoring_analyzer.analyze_text(text)
+            mistakes, grammar_feedback = self.analyze_text(text)
+            chatbot_feedback = self.get_groq_feedback(text)
+            interview_questions = self.generate_interview_questions(text)
+
+            # Debug print
+            print("Scores generated:", scores)
+            print("Detailed feedback:", scores['detailed_feedback'])
+
+            # Format detailed feedback
+            detailed_feedback = scores['detailed_feedback']
+            if mistakes:
+                detailed_feedback.append(f"Specific issues: {', '.join(mistakes)}")
+
+            result = [
+                ("Input:", text),
+                ("Grammar Analysis:", grammar_feedback),
+                ("Corrected Version:", self.grammar_checker(text)[0]['generated_text'] if self.grammar_checker else text),
+                ("Scores:", f"""Grammar: {scores['grammar_score']:.2f}
+Vocabulary: {scores['vocabulary_score']:.2f}
+Fluency: {scores['fluency_score']:.2f}
+Coherence: {scores['coherence_score']:.2f}
+Overall: {scores['overall_score']:.2f}"""),
+                ("Detailed Feedback:", "\n".join(detailed_feedback)),
+                ("Improvement Suggestion:", chatbot_feedback),
+                ("Interview Questions:", "\n".join(f"{i+1}. {q}" for i, q in enumerate(interview_questions)))
+            ]
+
+            # Debug print
+            print("Final formatted result:", result)
+            return result
+
+        except Exception as e:
+            print(f"Error in _process_input: {str(e)}")
             return [
-                ("Transcription:", text),
-                ("Grammar Issues:", "Error analyzing grammar"),
+                ("Input:", text),
+                ("Error:", "Analysis failed"),
                 ("Corrected Version:", text),
-                ("Improvement Suggestion:", "Unable to generate suggestions")
-            ] 
+                ("Scores:", "Unable to calculate scores"),
+                ("Detailed Feedback:", "Analysis failed"),
+                ("Improvement Suggestion:", "Unable to generate suggestions"),
+                ("Interview Questions:", "Unable to generate questions")
+            ]
+
+    def generate_interview_questions(self, text):
+        """Generate contextual interview questions based on the input"""
+        try:
+            prompt = f"""Based on this statement: "{text}"
+            
+            Act as an expert interviewer. Using chain-of-thought:
+            1. First, identify the key topics and expertise mentioned
+            2. Then, consider what deeper knowledge should be tested
+            3. Finally, generate 5 intelligent interview questions that:
+               - Progress from basic to complex
+               - Test both knowledge and practical application
+               - Encourage detailed responses
+               - Stay relevant to the context
+            
+            Format: Return only the numbered questions, no other text.
+            """
+
+            response = self.groq_client.chat.completions.create(
+                model="llama-3.3-70b-versatile",
+                messages=[
+                    {"role": "system", "content": "You are an expert technical interviewer who generates insightful, context-aware questions."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.7,
+                max_completion_tokens=1024,
+                top_p=1,
+                stream=False
+            )
+            
+            # Extract and format questions
+            questions = response.choices[0].message.content.strip().split('\n')
+            # Clean up any numbering or extra spaces
+            questions = [q.strip().lstrip('0123456789.)-] ') for q in questions if q.strip()]
+            # Take only the first 5 questions
+            questions = questions[:5]
+            
+            return questions
+
+        except Exception as e:
+            print(f"Error generating interview questions: {str(e)}")
+            return ["Unable to generate interview questions at this time."] 

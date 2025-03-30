@@ -17,6 +17,9 @@ from pydub import AudioSegment
 import io
 import subprocess
 import base64
+from concurrent.futures import ThreadPoolExecutor
+import asyncio
+import tempfile
 
 app = Flask(__name__)
 CORS(app)
@@ -29,7 +32,7 @@ def home():
         "message": "Communication Assessment API is running",
         "endpoints": {
             "process_text": "/api/process-text",
-            "process_audio": "/api/process-audio"
+            "process_speech": "/api/process-speech"
         }
     })
 
@@ -302,36 +305,71 @@ KEY FINDINGS
 
         return interface
 
-    @app.route('/api/process-text', methods=['POST', 'OPTIONS'])
+    @app.route('/api/process-text', methods=['POST'])
     def process_text_api():
-        if request.method == 'OPTIONS':
-            response = app.make_default_options_response()
-            response.headers.add('Access-Control-Allow-Headers', 'Content-Type')
-            return response
-
         try:
-            print("Received request data:", request.data)
             data = request.get_json()
-            print("Parsed JSON data:", data)
-            
             if not data or 'text' not in data:
-                print("Missing text in request")
                 return jsonify({'error': 'No text provided'}), 400
 
-            text = data.get('text')
-            if not text or not isinstance(text, str):
-                print(f"Invalid text format: {type(text)}")
-                return jsonify({'error': 'Invalid text format'}), 400
-
             assessment_app = CommunicationAssessmentApp()
-            result = assessment_app.process_text(text)
-            print("Processing result:", result)  # Add this debug line
+            chat_history = assessment_app.speech_processor.process_text(data['text'])
+            
+            if not chat_history or len(chat_history) < 1:
+                raise ValueError("Invalid text processing result")
+            
+            # Extract data from chat_history (same format as speech)
+            input_text = chat_history[0][1]      # Input text
+            grammar_analysis = chat_history[1][1] # Grammar analysis
+            corrected_text = chat_history[2][1]   # Corrected version
+            scores_text = chat_history[3][1]      # All scores
+            detailed_feedback = chat_history[4][1] # Detailed feedback
+            improvement = chat_history[5][1]      # Improvement suggestion
+            questions = chat_history[6][1]        # Interview questions
+
+            # Parse scores
+            scores = {}
+            for line in scores_text.split('\n'):
+                if ':' in line:
+                    key, value = line.split(':')
+                    scores[key.strip()] = float(value.strip())
+
+            result = {
+                'language_analysis': [
+                    ("Grammar Analysis:", grammar_analysis),
+                    ("Corrected Version:", corrected_text)
+                ],
+                'performance_analysis': [
+                    ("Scores:", scores_text),
+                    ("Detailed Feedback:", detailed_feedback),
+                    ("Improvement Suggestion:", improvement)
+                ],
+                'input_text': input_text,
+                'interview_questions': questions,
+                'report': f"""Communication Assessment Report
+Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+
+INPUT TEXT:
+{input_text}
+
+ANALYSIS
+{scores_text}
+
+DETAILED FEEDBACK:
+{detailed_feedback}
+
+SUGGESTIONS:
+{improvement}
+
+FOLLOW-UP QUESTIONS:
+{questions}
+"""
+            }
+
             return jsonify(result)
 
         except Exception as e:
-            import traceback
             print(f"Error in process_text_api: {str(e)}")
-            print(traceback.format_exc())
             return jsonify({'error': str(e)}), 500
 
     @app.route('/api/process-speech', methods=['POST', 'OPTIONS'])
@@ -341,9 +379,7 @@ KEY FINDINGS
             response.headers.add('Access-Control-Allow-Headers', 'Content-Type')
             return response
 
-        webm_path = None
-        wav_path = None
-
+        temp_dir = None
         try:
             if 'audio' not in request.files:
                 return jsonify({'error': 'No audio file provided'}), 400
@@ -352,150 +388,73 @@ KEY FINDINGS
             if not audio_file:
                 return jsonify({'error': 'Empty file'}), 400
 
-            # Save the file temporarily
-            temp_path = 'temp_audio'
-            if not os.path.exists(temp_path):
-                os.makedirs(temp_path)
+            temp_dir = tempfile.mkdtemp()
+            audio_path = os.path.join(temp_dir, 'temp_audio.wav')
+            audio_file.save(audio_path)
+
+            assessment_app = CommunicationAssessmentApp()
             
-            # Save original WebM file
-            webm_path = os.path.join(temp_path, 'temp_audio.webm')
-            wav_path = os.path.join(temp_path, 'temp_audio.wav')
+            # Get speech analysis
+            chat_history = assessment_app.speech_processor.process_audio(audio_path)
+            if not chat_history or len(chat_history) < 1:
+                raise ValueError("Invalid speech processing result")
             
-            audio_file.save(webm_path)
-            
-            try:
-                # Convert WebM to WAV using ffmpeg
-                command = [
-                    'ffmpeg',
-                    '-i', webm_path,
-                    '-acodec', 'pcm_s16le',
-                    '-ar', '16000',
-                    '-ac', '1',
-                    '-y',  # Overwrite output file if it exists
-                    wav_path
-                ]
-                
-                process = subprocess.Popen(
-                    command,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE
-                )
-                stdout, stderr = process.communicate()
-                
-                if process.returncode != 0:
-                    print(f"FFmpeg error: {stderr.decode()}")
-                    raise ValueError("Failed to convert audio format")
+            # Extract data from chat_history
+            transcribed_text = chat_history[0][1]  # Input text
+            grammar_analysis = chat_history[1][1]  # Grammar analysis
+            corrected_text = chat_history[2][1]    # Corrected version
+            scores_text = chat_history[3][1]       # All scores
+            detailed_feedback = chat_history[4][1]  # Detailed feedback
+            improvement = chat_history[5][1]        # Improvement suggestion
 
-                if not os.path.exists(wav_path):
-                    raise ValueError("WAV file was not created")
+            # Parse scores
+            scores = {}
+            for line in scores_text.split('\n'):
+                if ':' in line:
+                    key, value = line.split(':')
+                    scores[key.strip()] = float(value.strip())
 
-                # Process the audio
-                assessment_app = CommunicationAssessmentApp()
-                chat_history = assessment_app.speech_processor.process_audio(wav_path)
-                
-                if not chat_history or len(chat_history) < 4:
-                    raise ValueError("Invalid speech processing result")
-
-                transcribed_text = chat_history[0][1]  # Get transcribed text
-                
-                # Get vocabulary analysis
-                vocab_analysis = assessment_app.vocabulary_analyzer.analyze_vocabulary(transcribed_text)
-                
-                # Calculate grammar score
-                grammar_issues = chat_history[1][1]
-                if "No major issues found" in grammar_issues:
-                    grammar_score = 0.95
-                    issue_count = 0
-                else:
-                    issue_list = [issue.strip() for issue in grammar_issues.split(',') if issue.strip()]
-                    issue_count = len(issue_list)
-                    words_count = len(transcribed_text.split())
-                    if words_count > 0:
-                        normalized_issues = min(issue_count / (words_count / 10), 1.0)
-                        grammar_score = max(0.1, 1.0 - normalized_issues)
-                    else:
-                        grammar_score = 0.1
-
-                # Create visualizations
-                scores = [
-                    0.7,  # Placeholder pronunciation score
-                    grammar_score,
-                    vocab_analysis['lexical_diversity'],
-                    0.8,  # Placeholder fluency score
-                ]
-
-                radar_chart = assessment_app.create_radar_chart(scores)
-                vocab_chart = assessment_app.create_vocabulary_chart(vocab_analysis)
-
-                # Convert charts to base64
-                try:
-                    # Radar chart
-                    radar_buffer = io.BytesIO()
-                    radar_chart.write_image(radar_buffer, format='png')
-                    radar_base64 = base64.b64encode(radar_buffer.getvalue()).decode('utf-8')
-                    radar_buffer.close()
-
-                    # Vocabulary chart
-                    vocab_buffer = io.BytesIO()
-                    vocab_chart.write_image(vocab_buffer, format='png')
-                    vocab_base64 = base64.b64encode(vocab_buffer.getvalue()).decode('utf-8')
-                    vocab_buffer.close()
-                except Exception as e:
-                    print(f"Error converting charts to base64: {str(e)}")
-                    radar_base64 = None
-                    vocab_base64 = None
-
-                result = {
-                    'language_analysis': [
-                        ("Grammar Analysis:", chat_history[2][1]),
-                        ("Grammar Score:", f"{grammar_score:.2f}")
-                    ],
-                    'performance_analysis': [
-                        ("Vocabulary Analysis:", f"Lexical Diversity: {vocab_analysis['lexical_diversity']:.2f}\nHigh-Quality Complex Words: {', '.join(vocab_analysis['unique_words']) if vocab_analysis['unique_words'] else 'None detected'}"),
-                        ("Improvement Suggestion:", chat_history[3][1])
-                    ],
-                    'transcribed_text': transcribed_text,
-                    'report': f"""Communication Assessment Report
+            result = {
+                'language_analysis': [
+                    ("Grammar Analysis:", grammar_analysis),
+                    ("Corrected Version:", corrected_text)
+                ],
+                'performance_analysis': [
+                    ("Scores:", scores_text),
+                    ("Detailed Feedback:", detailed_feedback),
+                    ("Improvement Suggestion:", improvement)
+                ],
+                'transcribed_text': transcribed_text,
+                'interview_questions': chat_history[6][1] if len(chat_history) > 6 else "No questions generated",
+                'report': f"""Communication Assessment Report
 Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 
 TRANSCRIPTION:
 {transcribed_text}
 
-OVERALL SCORES
-Grammar: {grammar_score:.2f}
-Vocabulary: {vocab_analysis['lexical_diversity']:.2f}
+ANALYSIS
+{scores_text}
 
-KEY FINDINGS
-• Grammar: {issue_count} issues found
-• Complex Words Used: {len(vocab_analysis['unique_words'])}
-""",
-                    'charts': {
-                        'radar': radar_base64,
-                        'vocabulary': vocab_base64
-                    }
-                }
+DETAILED FEEDBACK:
+{detailed_feedback}
 
-            except Exception as e:
-                print(f"Error processing audio: {str(e)}")
-                raise
+SUGGESTIONS:
+{improvement}
+
+FOLLOW-UP QUESTIONS:
+{chat_history[6][1] if len(chat_history) > 6 else "No questions generated"}
+"""
+            }
+
+            return jsonify(result)
 
         except Exception as e:
-            import traceback
             print(f"Error in process_speech_api: {str(e)}")
-            print(traceback.format_exc())
             return jsonify({'error': str(e)}), 500
-
         finally:
-            # Clean up temp files
-            try:
-                if webm_path and os.path.exists(webm_path):
-                    os.remove(webm_path)
-                if wav_path and os.path.exists(wav_path):
-                    os.remove(wav_path)
-            except Exception as e:
-                print(f"Error cleaning up temp files: {str(e)}")
-
-        return jsonify(result)
+            if temp_dir and os.path.exists(temp_dir):
+                import shutil
+                shutil.rmtree(temp_dir, ignore_errors=True)
 
 def main():
     multiprocessing.freeze_support()

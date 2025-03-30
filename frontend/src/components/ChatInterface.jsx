@@ -255,6 +255,102 @@ export default function ChatInterface({ onSubmitText }) {
     }
   };
 
+  const processResponse = (response) => {
+    console.log("Full API response:", response); // Debug log
+
+    const messages = [];
+
+    // Add user's input
+    if (response.input_text || response.transcribed_text) {
+      messages.push({
+        role: "user",
+        content: response.input_text || response.transcribed_text,
+      });
+    }
+
+    // Add language analysis - fix duplicate grammar analysis
+    if (response.language_analysis) {
+      response.language_analysis.forEach(([label, content]) => {
+        // Skip duplicate grammar analysis/score
+        if (label === "Grammar Score:") return;
+        messages.push({ role: "ai", content: `${label} ${content}` });
+      });
+    }
+
+    // Add performance analysis with better score formatting
+    if (response.performance_analysis) {
+      response.performance_analysis.forEach(([label, content]) => {
+        if (label === "Scores:") {
+          messages.push({ role: "ai", content: "Assessment Scores:" });
+          // Split and format each score
+          const scores = content.split("\n");
+          scores.forEach((score) => {
+            if (score.trim()) {
+              messages.push({
+                role: "ai",
+                content: score.trim(),
+                className: "score-item",
+              });
+            }
+          });
+        } else if (label === "Detailed Feedback:") {
+          // Split detailed feedback into separate messages
+          const feedbackLines = content.split("\n");
+          feedbackLines.forEach((line) => {
+            if (line.trim()) {
+              messages.push({
+                role: "ai",
+                content: line.trim(),
+                className: "feedback-item",
+              });
+            }
+          });
+        } else {
+          messages.push({ role: "ai", content: `${label} ${content}` });
+        }
+      });
+    }
+
+    // Add interview questions with better formatting
+    if (
+      response.interview_questions &&
+      response.interview_questions !== "No questions generated"
+    ) {
+      messages.push({
+        role: "ai",
+        content: "Follow-up Questions:",
+        className: "question-header",
+      });
+
+      // Handle both array and string formats
+      if (Array.isArray(response.interview_questions)) {
+        response.interview_questions.forEach((question, index) => {
+          messages.push({
+            role: "ai",
+            content: `${index + 1}. ${question}`,
+            className: "question-item",
+          });
+        });
+      } else {
+        // Split string into individual questions if it's a string
+        const questions = response.interview_questions
+          .split(/\d+\.\s+/)
+          .filter((q) => q.trim());
+
+        questions.forEach((question, index) => {
+          messages.push({
+            role: "ai",
+            content: `${index + 1}. ${question.trim()}`,
+            className: "question-item",
+          });
+        });
+      }
+    }
+
+    console.log("Processed messages:", messages); // Debug log
+    return messages;
+  };
+
   return (
     <div className="flex flex-col h-screen bg-black">
       {/* Messages Area */}
@@ -275,6 +371,14 @@ export default function ChatInterface({ onSubmitText }) {
               className={`max-w-[70%] p-4 rounded-2xl ${
                 message.role === "user"
                   ? "bg-blue-600 text-white rounded-br-none"
+                  : message.className === "score-item"
+                  ? "bg-gray-800 text-green-400 rounded-bl-none"
+                  : message.className === "feedback-item"
+                  ? "bg-gray-800 text-orange-400 rounded-bl-none"
+                  : message.className === "question-item"
+                  ? "bg-gray-800 text-yellow-400 rounded-bl-none"
+                  : message.className === "question-header"
+                  ? "bg-gray-700 text-white font-bold rounded-bl-none"
                   : "bg-gray-800 text-white rounded-bl-none"
               }`}
             >
