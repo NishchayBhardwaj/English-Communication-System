@@ -5,7 +5,7 @@ import ChatInterface from "@/components/ChatInterface";
 
 export default function AssessmentPage() {
   return (
-    <main className="min-h-screen bg-black">
+    <main className="min-h-screen bg-gray-600">
       <div className="max-w-6xl mx-auto px-4 py-8">
         <div className="mb-8">
           <h1 className="text-4xl font-bold text-white mb-4">

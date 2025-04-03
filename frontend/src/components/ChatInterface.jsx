@@ -59,7 +59,7 @@ export default function ChatInterface({ onSubmitText }) {
       // Process the text
       const result = await processText(inputMessage);
 
-      // Add the system responses
+      console.log(result); // Add the system responses
       if (result.language_analysis) {
         // Add grammar analysis
         setMessages((prev) => [
@@ -352,7 +352,7 @@ export default function ChatInterface({ onSubmitText }) {
   };
 
   return (
-    <div className="flex flex-col h-screen bg-black">
+    <div className="flex flex-col h-screen bg-neutral-800">
       {/* Messages Area */}
       <div className="flex-1 overflow-y-auto p-6 space-y-4">
         {messages.map((message, index) => (

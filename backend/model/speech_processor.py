@@ -217,43 +217,41 @@ Overall: {scores['overall_score']:.2f}"""),
             ]
 
     def generate_interview_questions(self, text):
-        """Generate contextual interview questions based on the input"""
+        """Generate one contextual follow-up question based on the input"""
         try:
             prompt = f"""Based on this statement: "{text}"
             
             Act as an expert interviewer. Using chain-of-thought:
             1. First, identify the key topics and expertise mentioned
             2. Then, consider what deeper knowledge should be tested
-            3. Finally, generate 5 intelligent interview questions that:
-               - Progress from basic to complex
-               - Test both knowledge and practical application
-               - Encourage detailed responses
-               - Stay relevant to the context
+            3. Finally, generate 1 intelligent follow-up question that:
+               - Tests both knowledge and practical application
+               - Encourages a detailed response
+               - Stays relevant to the context
+               - Focuses on the most important aspect mentioned
             
-            Format: Return only the numbered questions, no other text.
+            Format: Return only the question, no other text.
             """
 
             response = self.groq_client.chat.completions.create(
                 model="llama-3.3-70b-versatile",
                 messages=[
-                    {"role": "system", "content": "You are an expert technical interviewer who generates insightful, context-aware questions."},
+                    {"role": "system", "content": "You are an expert technical interviewer who generates one insightful, context-aware question."},
                     {"role": "user", "content": prompt}
                 ],
                 temperature=0.7,
-                max_completion_tokens=1024,
+                max_completion_tokens=256,
                 top_p=1,
                 stream=False
             )
             
-            # Extract and format questions
-            questions = response.choices[0].message.content.strip().split('\n')
+            # Extract and format the question
+            question = response.choices[0].message.content.strip()
             # Clean up any numbering or extra spaces
-            questions = [q.strip().lstrip('0123456789.)-] ') for q in questions if q.strip()]
-            # Take only the first 5 questions
-            questions = questions[:5]
+            question = question.lstrip('0123456789.)-] ')
             
-            return questions
+            return [question]  # Return as list for consistency with existing code
 
         except Exception as e:
-            print(f"Error generating interview questions: {str(e)}")
-            return ["Unable to generate interview questions at this time."] 
+            print(f"Error generating interview question: {str(e)}")
+            return ["Unable to generate a follow-up question at this time."] 
