@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from "react";
 import { Send, Mic, MicOff, FileText, Loader } from "lucide-react";
 import { processText, processSpeech, checkApiHealth } from "@/services/api";
+import Sidebar from "./Sidebar";
 
 export default function ChatInterface({ onSubmitText }) {
   const [messages, setMessages] = useState([
@@ -18,6 +19,8 @@ export default function ChatInterface({ onSubmitText }) {
   const [showReport, setShowReport] = useState(false);
   const [report, setReport] = useState(null);
   const [result, setResult] = useState(null);
+  const [currentChatId, setCurrentChatId] = useState(null);
+  const [showSidebar, setShowSidebar] = useState(true);
 
   const mediaRecorderRef = useRef(null);
   const audioChunksRef = useRef([]);
@@ -351,168 +354,219 @@ export default function ChatInterface({ onSubmitText }) {
     return messages;
   };
 
+  const handleNewChat = () => {
+    setMessages([
+      {
+        role: "system",
+        content:
+          "Welcome to the English Communication Assessment Tool! You can type or speak to begin your assessment.",
+      },
+    ]);
+    setCurrentChatId(null);
+    setReport(null);
+    setResult(null);
+  };
+
+  const handleSelectChat = async (chatId) => {
+    try {
+      const response = await fetch(
+        `http://localhost:8080/api/chat-histories/${chatId}`
+      );
+      const chatData = await response.json();
+
+      // Reconstruct messages from chat history
+      const newMessages = processResponse(chatData);
+      setMessages(newMessages);
+      setCurrentChatId(chatId);
+
+      // Set report and result if available
+      if (chatData.report) {
+        setReport(chatData.report);
+      }
+      if (chatData.charts) {
+        setResult({ ...chatData, charts: chatData.charts });
+      }
+    } catch (error) {
+      console.error("Error loading chat:", error);
+    }
+  };
+
   return (
-    <div className="flex flex-col h-screen bg-neutral-800">
-      {/* Messages Area */}
-      <div className="flex-1 overflow-y-auto p-6 space-y-4">
-        {messages.map((message, index) => (
-          <div
-            key={index}
-            className={`flex ${
-              message.role === "user" ? "justify-end" : "justify-start"
-            } items-end space-x-2`}
+    <div className="flex h-screen bg-neutral-800">
+      {showSidebar && (
+        <Sidebar
+          onNewChat={handleNewChat}
+          onSelectChat={handleSelectChat}
+          currentChatId={currentChatId}
+        />
+      )}
+
+      <div className="flex-1 flex flex-col relative">
+        <div className="absolute top-0 left-0 p-4 z-10">
+          <button
+            onClick={() => setShowSidebar(!showSidebar)}
+            className="p-2 hover:bg-gray-700 rounded-lg text-gray-400 hover:text-white transition-colors"
           >
-            {message.role === "system" && (
-              <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center">
-                <span className="text-white text-sm">AI</span>
-              </div>
-            )}
+            ☰
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-6 pt-16 space-y-4">
+          {messages.map((message, index) => (
             <div
-              className={`max-w-[70%] p-4 rounded-2xl ${
-                message.role === "user"
-                  ? "bg-blue-600 text-white rounded-br-none"
-                  : message.className === "score-item"
-                  ? "bg-gray-800 text-green-400 rounded-bl-none"
-                  : message.className === "feedback-item"
-                  ? "bg-gray-800 text-orange-400 rounded-bl-none"
-                  : message.className === "question-item"
-                  ? "bg-gray-800 text-yellow-400 rounded-bl-none"
-                  : message.className === "question-header"
-                  ? "bg-gray-700 text-white font-bold rounded-bl-none"
-                  : "bg-gray-800 text-white rounded-bl-none"
-              }`}
+              key={index}
+              className={`flex ${
+                message.role === "user" ? "justify-end" : "justify-start"
+              } items-end space-x-2`}
             >
-              <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+              {message.role === "system" && (
+                <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center">
+                  <span className="text-white text-sm">AI</span>
+                </div>
+              )}
+              <div
+                className={`max-w-[70%] p-4 rounded-2xl ${
+                  message.role === "user"
+                    ? "bg-blue-600 text-white rounded-br-none"
+                    : message.className === "score-item"
+                    ? "bg-gray-800 text-green-400 rounded-bl-none"
+                    : message.className === "feedback-item"
+                    ? "bg-gray-800 text-orange-400 rounded-bl-none"
+                    : message.className === "question-item"
+                    ? "bg-gray-800 text-yellow-400 rounded-bl-none"
+                    : message.className === "question-header"
+                    ? "bg-gray-700 text-white font-bold rounded-bl-none"
+                    : "bg-gray-800 text-white rounded-bl-none"
+                }`}
+              >
+                <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+              </div>
+              {message.role === "user" && (
+                <div className="w-8 h-8 rounded-full bg-gray-700 flex items-center justify-center">
+                  <span className="text-white text-sm">You</span>
+                </div>
+              )}
             </div>
-            {message.role === "user" && (
-              <div className="w-8 h-8 rounded-full bg-gray-700 flex items-center justify-center">
-                <span className="text-white text-sm">You</span>
-              </div>
-            )}
-          </div>
-        ))}
-        <div ref={messagesEndRef} />
-      </div>
+          ))}
+          <div ref={messagesEndRef} />
+        </div>
 
-      {/* Input Area */}
-      <div className="border-t border-gray-800 p-4 bg-gray-900">
-        <form onSubmit={handleSubmit} className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={toggleRecording}
-            className={`p-3 rounded-full transition-colors ${
-              isRecording
-                ? "bg-red-600 text-white hover:bg-red-700"
-                : "bg-gray-700 hover:bg-gray-600 text-white"
-            }`}
-            disabled={isProcessing}
-          >
-            {isRecording ? <MicOff size={20} /> : <Mic size={20} />}
-          </button>
-
-          <div className="flex-1 relative">
-            <input
-              type="text"
-              value={inputMessage}
-              onChange={(e) => setInputMessage(e.target.value)}
-              placeholder="Type your message..."
-              className="w-full p-3 pr-12 rounded-full border border-gray-700 bg-gray-800 text-white focus:outline-none focus:border-blue-600"
-              disabled={isRecording || isProcessing}
-            />
-            {isProcessing && (
-              <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
-                <Loader className="animate-spin text-gray-400" size={20} />
-              </div>
-            )}
-          </div>
-
-          <button
-            type="submit"
-            className="p-3 bg-blue-600 text-white rounded-full hover:bg-blue-700 transition-colors disabled:bg-gray-700 disabled:cursor-not-allowed"
-            disabled={(!inputMessage.trim() && !isRecording) || isProcessing}
-          >
-            <Send size={20} />
-          </button>
-
-          {report && (
+        <div className="border-t border-gray-800 p-4 bg-gray-900">
+          <form onSubmit={handleSubmit} className="flex items-center gap-2">
             <button
               type="button"
-              onClick={() => setShowReport(!showReport)}
+              onClick={toggleRecording}
               className={`p-3 rounded-full transition-colors ${
-                showReport
-                  ? "bg-green-600 text-white"
-                  : "bg-gray-700 text-white hover:bg-gray-600"
+                isRecording
+                  ? "bg-red-600 text-white hover:bg-red-700"
+                  : "bg-gray-700 hover:bg-gray-600 text-white"
               }`}
+              disabled={isProcessing}
             >
-              <FileText size={20} />
+              {isRecording ? <MicOff size={20} /> : <Mic size={20} />}
             </button>
-          )}
-        </form>
-      </div>
 
-      {/* Report Panel */}
-      {showReport && report && (
-        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center p-4">
-          <div className="bg-gray-900 rounded-lg p-6 max-w-4xl w-full max-h-[80vh] overflow-y-auto text-white">
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-xl font-semibold">Assessment Report</h3>
-              <button
-                onClick={() => setShowReport(false)}
-                className="text-gray-400 hover:text-white"
-              >
-                ×
-              </button>
+            <div className="flex-1 relative">
+              <input
+                type="text"
+                value={inputMessage}
+                onChange={(e) => setInputMessage(e.target.value)}
+                placeholder="Type your message..."
+                className="w-full p-3 pr-12 rounded-full border border-gray-700 bg-gray-800 text-white focus:outline-none focus:border-blue-600"
+                disabled={isRecording || isProcessing}
+              />
+              {isProcessing && (
+                <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
+                  <Loader className="animate-spin text-gray-400" size={20} />
+                </div>
+              )}
             </div>
 
-            {/* Text Report */}
-            <pre className="whitespace-pre-wrap text-sm text-gray-300 mb-6">
-              {report}
-            </pre>
+            <button
+              type="submit"
+              className="p-3 bg-blue-600 text-white rounded-full hover:bg-blue-700 transition-colors disabled:bg-gray-700 disabled:cursor-not-allowed"
+              disabled={(!inputMessage.trim() && !isRecording) || isProcessing}
+            >
+              <Send size={20} />
+            </button>
 
-            {/* Visualizations */}
-            {result?.charts && (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-4">
-                {result.charts.radar && (
-                  <div className="bg-gray-800 p-4 rounded-lg">
-                    <h4 className="text-lg font-medium mb-2">
-                      Skills Assessment
-                    </h4>
-                    <div className="relative">
-                      <img
-                        src={`data:image/png;base64,${result.charts.radar}`}
-                        alt="Skills Radar Chart"
-                        className="w-full"
-                        onError={(e) => {
-                          console.error("Error loading radar chart");
-                          e.target.style.display = "none";
-                        }}
-                      />
-                    </div>
-                  </div>
-                )}
-                {result.charts.vocabulary && (
-                  <div className="bg-gray-800 p-4 rounded-lg">
-                    <h4 className="text-lg font-medium mb-2">
-                      Vocabulary Analysis
-                    </h4>
-                    <div className="relative">
-                      <img
-                        src={`data:image/png;base64,${result.charts.vocabulary}`}
-                        alt="Vocabulary Analysis Chart"
-                        className="w-full"
-                        onError={(e) => {
-                          console.error("Error loading vocabulary chart");
-                          e.target.style.display = "none";
-                        }}
-                      />
-                    </div>
-                  </div>
-                )}
-              </div>
+            {report && (
+              <button
+                type="button"
+                onClick={() => setShowReport(!showReport)}
+                className={`p-3 rounded-full transition-colors ${
+                  showReport
+                    ? "bg-green-600 text-white"
+                    : "bg-gray-700 text-white hover:bg-gray-600"
+                }`}
+              >
+                <FileText size={20} />
+              </button>
             )}
-          </div>
+          </form>
         </div>
-      )}
+
+        {showReport && report && (
+          <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center p-4">
+            <div className="bg-gray-900 rounded-lg p-6 max-w-4xl w-full max-h-[80vh] overflow-y-auto text-white">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-xl font-semibold">Assessment Report</h3>
+                <button
+                  onClick={() => setShowReport(false)}
+                  className="text-gray-400 hover:text-white"
+                >
+                  ×
+                </button>
+              </div>
+
+              <pre className="whitespace-pre-wrap text-sm text-gray-300 mb-6">
+                {report}
+              </pre>
+
+              {result?.charts && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-4">
+                  {result.charts.radar && (
+                    <div className="bg-gray-800 p-4 rounded-lg">
+                      <h4 className="text-lg font-medium mb-2">
+                        Skills Assessment
+                      </h4>
+                      <div className="relative">
+                        <img
+                          src={`data:image/png;base64,${result.charts.radar}`}
+                          alt="Skills Radar Chart"
+                          className="w-full"
+                          onError={(e) => {
+                            console.error("Error loading radar chart");
+                            e.target.style.display = "none";
+                          }}
+                        />
+                      </div>
+                    </div>
+                  )}
+                  {result.charts.vocabulary && (
+                    <div className="bg-gray-800 p-4 rounded-lg">
+                      <h4 className="text-lg font-medium mb-2">
+                        Vocabulary Analysis
+                      </h4>
+                      <div className="relative">
+                        <img
+                          src={`data:image/png;base64,${result.charts.vocabulary}`}
+                          alt="Vocabulary Analysis Chart"
+                          className="w-full"
+                          onError={(e) => {
+                            console.error("Error loading vocabulary chart");
+                            e.target.style.display = "none";
+                          }}
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

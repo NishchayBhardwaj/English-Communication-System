@@ -24,7 +24,7 @@ import tempfile
 from pymongo import MongoClient
 
 # Connect to MongoDB
-
+MONGO_URI = "mongodb+srv://vaibhav22210180:gMnJlkXIweLe9AA1@cluster0.wye6h.mongodb.net/"
 
 app = Flask(__name__)
 CORS(app)
@@ -400,7 +400,7 @@ FOLLOW-UP QUESTIONS:
 """
             }
 
-            MONGO_URI = "mongodb+srv://vaibhav22210180:gMnJlkXIweLe9AA1@cluster0.wye6h.mongodb.net/"  # Update with your MongoDB URI if hosted remotely
+            # MONGO_URI = "mongodb+srv://vaibhav22210180:gMnJlkXIweLe9AA1@cluster0.wye6h.mongodb.net/"  # Update with your MongoDB URI if hosted remotely
             client = MongoClient(MONGO_URI)
             db = client["communication_assessment"]  # Database Name
             collection = db["queries"]  # Collection Name
@@ -505,6 +505,66 @@ FOLLOW-UP QUESTIONS:
             if temp_dir and os.path.exists(temp_dir):
                 import shutil
                 shutil.rmtree(temp_dir, ignore_errors=True)
+
+    @app.route('/api/chat-histories', methods=['GET'])
+    def get_chat_histories():
+        try:
+            client = MongoClient(MONGO_URI)
+            db = client["communication_assessment"]
+            collection = db["queries"]
+            
+            # Get all chat histories, sorted by timestamp
+            histories = list(collection.find({}, {
+                'timestamp': 1,
+                'transcribed_text': 1,
+                'input_text': 1,
+                'scores': 1
+            }).sort('timestamp', -1))
+            
+            # Convert ObjectId to string for JSON serialization
+            for history in histories:
+                history['_id'] = str(history['_id'])
+            
+            return jsonify(histories)
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+
+    @app.route('/api/chat-histories/<chat_id>', methods=['GET'])
+    def get_chat_history(chat_id):
+        try:
+            client = MongoClient(MONGO_URI)
+            db = client["communication_assessment"]
+            collection = db["queries"]
+            
+            # Convert string ID to ObjectId
+            from bson.objectid import ObjectId
+            chat = collection.find_one({'_id': ObjectId(chat_id)})
+            
+            if not chat:
+                return jsonify({'error': 'Chat not found'}), 404
+            
+            chat['_id'] = str(chat['_id'])
+            return jsonify(chat)
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+
+    @app.route('/api/chat-histories/<chat_id>', methods=['DELETE'])
+    def delete_chat_history(chat_id):
+        try:
+            client = MongoClient(MONGO_URI)
+            db = client["communication_assessment"]
+            collection = db["queries"]
+            
+            # Convert string ID to ObjectId
+            from bson.objectid import ObjectId
+            result = collection.delete_one({'_id': ObjectId(chat_id)})
+            
+            if result.deleted_count == 0:
+                return jsonify({'error': 'Chat not found'}), 404
+            
+            return jsonify({'message': 'Chat deleted successfully'})
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
 
 def main():
     multiprocessing.freeze_support()
