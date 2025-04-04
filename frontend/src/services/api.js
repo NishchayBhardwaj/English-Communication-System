@@ -1,10 +1,10 @@
 import axios from "axios";
 
-const API_BASE_URL = "http://localhost:5000/api";
+const API_BASE_URL = "http://127.0.0.1:8080/api";
 
 export const checkApiHealth = async () => {
   try {
-    const response = await fetch("http://localhost:5000/");
+    const response = await fetch("http://127.0.0.1:8080");
     if (!response.ok) {
       throw new Error("API server is not responding");
     }

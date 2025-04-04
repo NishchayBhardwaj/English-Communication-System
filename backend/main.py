@@ -1,6 +1,7 @@
 import gradio as gr
 from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
+from sklearn.tree import export_text
 from model.speech_processor import SpeechProcessor
 from model.vocabulary_analyzer import VocabularyAnalyzer
 from model.pronunciation_analyzer import PronunciationAnalyzer
@@ -20,6 +21,10 @@ import base64
 from concurrent.futures import ThreadPoolExecutor
 import asyncio
 import tempfile
+from pymongo import MongoClient
+
+# Connect to MongoDB
+
 
 app = Flask(__name__)
 CORS(app)
@@ -101,6 +106,11 @@ class CommunicationAssessmentApp:
         return fig
 
     def process_input(self, audio_file):
+        MONGO_URI = "mongodb+srv://vaibhav22210180:gMnJlkXIweLe9AA1@cluster0.wye6h.mongodb.net/"  # Update with your MongoDB URI if hosted remotely
+        client = MongoClient(MONGO_URI)
+        db = client["communication_assessment"]  # Database Name
+        collection = db["queries"]  # Collection Name
+
         """Process audio input and return comprehensive analysis"""
         if audio_file is None:
             return [("Grammar Analysis:", "Please provide an audio input."), 
@@ -179,6 +189,24 @@ KEY FINDINGS
 • Speech Fluency: {'Excellent' if pron_analysis['fluency_score'] > 0.8 else 'Good' if pron_analysis['fluency_score'] > 0.6 else 'Needs Improvement'}
 """
 
+            # Save the analysis to MongoDB 
+            query_data = {
+                "timestamp": datetime.now().isoformat(),
+                "transcribed_text": transcribed_text,
+                "scores": {
+                    "pronunciation": pron_analysis['pronunciation_score'],
+                    "grammar": grammar_score,
+                    "vocabulary": vocab_analysis['lexical_diversity'],
+                    "fluency": pron_analysis['fluency_score']
+                },
+                "grammar_issues": grammar_issues,
+                "vocab_analysis": vocab_analysis,
+                "pronunciation_analysis": pron_analysis,
+                "report": report_text
+            }
+
+            collection.insert_one(query_data)  # Store data in MongoDB
+
             return language_analysis, performance_analysis, radar_chart, vocab_chart, transcribed_text, report_text
 
         except Exception as e:
@@ -187,6 +215,8 @@ KEY FINDINGS
                    ("Grammar Score:", "0.00")], [("Error:", "Analysis failed")], None, None, None, "Error generating report"
 
     def process_text(self, text):
+        
+
         """Process text input and return analysis"""
         try:
             # Get initial feedback
@@ -224,6 +254,20 @@ KEY FINDINGS
             radar_chart = self.create_radar_chart(scores)
             vocab_chart = self.create_vocabulary_chart(vocab_analysis)
 
+            report_text = f"""Communication Assessment Report
+                Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+
+                OVERALL SCORES
+                Grammar: {grammar_score:.2f}
+                Vocabulary: {vocab_analysis['lexical_diversity']:.2f}
+
+                KEY FINDINGS
+                • Grammar: {issue_count} issues found
+                • Complex Words Used: {len(vocab_analysis['unique_words'])}
+            """
+
+            
+
             return {
                 'language_analysis': [
                     ("Grammar Analysis:", chat_history[2][1]),
@@ -234,17 +278,7 @@ KEY FINDINGS
                     ("Improvement Suggestion:", chat_history[3][1])
                 ],
                 'transcribed_text': text,
-                'report': f"""Communication Assessment Report
-Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-
-OVERALL SCORES
-Grammar: {grammar_score:.2f}
-Vocabulary: {vocab_analysis['lexical_diversity']:.2f}
-
-KEY FINDINGS
-• Grammar: {issue_count} issues found
-• Complex Words Used: {len(vocab_analysis['unique_words'])}
-""",
+                'report': report_text,
                 'charts': {
                     'radar': radar_chart.to_json() if radar_chart else None,
                     'vocabulary': vocab_chart.to_json() if vocab_chart else None
@@ -366,6 +400,22 @@ FOLLOW-UP QUESTIONS:
 """
             }
 
+            MONGO_URI = "mongodb+srv://vaibhav22210180:gMnJlkXIweLe9AA1@cluster0.wye6h.mongodb.net/"  # Update with your MongoDB URI if hosted remotely
+            client = MongoClient(MONGO_URI)
+            db = client["communication_assessment"]  # Database Name
+            collection = db["queries"]  # Collection Name
+
+            query_data = {
+                "timestamp": datetime.now().isoformat(),
+                "input_text": input_text,
+                "scores": scores_text,
+                "feedback": detailed_feedback,
+                "Suggestions": improvement,
+                "Follow-up Questions": questions
+            }
+
+            collection.insert_one(query_data)
+
             return jsonify(result)
 
         except Exception as e:
@@ -465,7 +515,7 @@ def main():
     app.logger.addHandler(handler)
     
     # Run the Flask app
-    app.run(host='0.0.0.0', port=5000, debug=False)
+    app.run(host='0.0.0.0', port=8080, debug=False)
 
 if __name__ == "__main__":
     main() 

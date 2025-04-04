@@ -27,3 +27,4 @@ scipy
 kaleido  # For saving plotly figures as images
 pydub  # For audio format conversion
 psutil  # For process management
+pymongo
