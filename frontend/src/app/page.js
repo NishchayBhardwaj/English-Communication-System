@@ -19,18 +19,18 @@ export default function EnglishAssessmentLandingPage() {
               <div className="flex space-x-4">
                 <a
                   href="#features"
-                  className="text-gray-700 hover:text-blue-600"
+                  className="px-2 py-3 text-gray-700 hover:text-blue-600"
                 >
                   Features
                 </a>
                 <a
                   href="#pricing"
-                  className="text-gray-700 hover:text-blue-600"
+                  className="px-2 py-3 text-gray-700 hover:text-blue-600"
                 >
                   Pricing
                 </a>
                 <Link
-                  href="/assessment"
+                  href="/dashboard"
                   className="px-6 py-3 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors"
                 >
                   Start Assessment
@@ -51,9 +51,11 @@ export default function EnglishAssessmentLandingPage() {
               improvement in English communication
             </p>
             <div className="mt-10 flex justify-center space-x-4">
-              <button className="bg-white text-blue-600 px-6 py-3 rounded-md font-semibold hover:bg-blue-50 transition">
-                Take Free Assessment
-              </button>
+              <Link href="/assessment">
+                <button className="bg-white text-blue-600 px-6 py-3 rounded-md font-semibold hover:bg-blue-50 transition">
+                  Take Free Assessment
+                </button>
+              </Link>
               <button className="bg-transparent border-2 border-white text-white px-6 py-3 rounded-md hover:bg-white hover:text-blue-600 transition">
                 Learn More
               </button>

@@ -72,17 +72,6 @@ export default function ChatInterface({ onSubmitText }) {
             content: `Grammar Analysis: ${result.language_analysis[0][1]}`,
           },
         ]);
-
-        // Add grammar score
-        if (result.language_analysis[1]) {
-          setMessages((prev) => [
-            ...prev,
-            {
-              role: "system",
-              content: `Grammar Score: ${result.language_analysis[1][1]}`,
-            },
-          ]);
-        }
       }
 
       if (result.performance_analysis) {
@@ -91,20 +80,55 @@ export default function ChatInterface({ onSubmitText }) {
           ...prev,
           {
             role: "system",
-            content: `${result.performance_analysis[0][1]}`,
+            content: `Scores: \n${result.performance_analysis[0][1]}`,
           },
         ]);
 
         // Add improvement suggestions
-        if (result.performance_analysis[1]) {
+        if (result.performance_analysis[2]) {
           setMessages((prev) => [
             ...prev,
             {
               role: "system",
-              content: `Improvement Suggestions: ${result.performance_analysis[1][1]}`,
+              content: `Improvement Suggestions: ${result.performance_analysis[2][1]}`,
             },
           ]);
         }
+      }
+
+      // Add improvement suggestions
+      if (
+        result.interview_questions &&
+        result.interview_questions !== "No questions generated"
+      ) {
+        const updatedMessages = [];
+
+        // Add the header
+        updatedMessages.push({
+          role: "ai",
+          content: "Follow-up Questions:",
+          className: "question-header",
+        });
+
+        let questions = [];
+        if (Array.isArray(result.interview_questions)) {
+          questions = result.interview_questions;
+        } else {
+          // If it's a string, split by numbered pattern like "1. ", "2. ", etc.
+          questions = result.interview_questions
+            .split(/\d+\.\s+/)
+            .filter((q) => q.trim());
+        }
+
+        questions.forEach((question, index) => {
+          updatedMessages.push({
+            role: "system",
+            content: `${index + 1}. ${question.trim()}`,
+            className: "question-item",
+          });
+        });
+
+        setMessages((prev) => [...prev, ...updatedMessages]);
       }
 
       // Update report if available
@@ -220,23 +244,71 @@ export default function ChatInterface({ onSubmitText }) {
         ]);
       }
 
-      // Add analysis results
+      // Add grammar analysis if available
       if (result.language_analysis) {
-        result.language_analysis.forEach((analysis) => {
-          setMessages((prev) => [
-            ...prev,
-            { role: "system", content: `${analysis[0]} ${analysis[1]}` },
-          ]);
-        });
+        setMessages((prev) => [
+          ...prev,
+          {
+            role: "system",
+            content: `Grammar Analysis: ${result.language_analysis[0][1]}`,
+          },
+        ]);
       }
 
+      // Add performance analysis if available
       if (result.performance_analysis) {
-        result.performance_analysis.forEach((analysis) => {
+        // Scores
+        setMessages((prev) => [
+          ...prev,
+          {
+            role: "system",
+            content: `Scores: \n${result.performance_analysis[0][1]}`,
+          },
+        ]);
+
+        // Suggestions
+        if (result.performance_analysis[2]) {
           setMessages((prev) => [
             ...prev,
-            { role: "system", content: `${analysis[0]} ${analysis[1]}` },
+            {
+              role: "system",
+              content: `Improvement Suggestions: ${result.performance_analysis[2][1]}`,
+            },
           ]);
+        }
+      }
+
+      // Add follow-up questions
+      if (
+        result.interview_questions &&
+        result.interview_questions !== "No questions generated"
+      ) {
+        const updatedMessages = [];
+
+        updatedMessages.push({
+          role: "ai",
+          content: "Follow-up Questions:",
+          className: "question-header",
         });
+
+        let questions = [];
+        if (Array.isArray(result.interview_questions)) {
+          questions = result.interview_questions;
+        } else {
+          questions = result.interview_questions
+            .split(/\d+\.\s+/)
+            .filter((q) => q.trim());
+        }
+
+        questions.forEach((question, index) => {
+          updatedMessages.push({
+            role: "ai",
+            content: `${index + 1}. ${question.trim()}`,
+            className: "question-item",
+          });
+        });
+
+        setMessages((prev) => [...prev, ...updatedMessages]);
       }
 
       // Update report and charts
@@ -263,7 +335,7 @@ export default function ChatInterface({ onSubmitText }) {
 
     const messages = [];
 
-    // Add user's input
+    // 1. Add user's input
     if (response.input_text || response.transcribed_text) {
       messages.push({
         role: "user",
@@ -271,53 +343,81 @@ export default function ChatInterface({ onSubmitText }) {
       });
     }
 
-    // Add language analysis - fix duplicate grammar analysis
-    if (response.language_analysis) {
-      response.language_analysis.forEach(([label, content]) => {
-        // Skip duplicate grammar analysis/score
-        if (label === "Grammar Score:") return;
-        messages.push({ role: "ai", content: `${label} ${content}` });
+    // Add scores if present
+    if (response.scores) {
+      const scoreLines = response.scores
+        .split("\n")
+        .filter((line) => line.trim()) // remove empty lines
+        .map((line) => line.trim())
+        .join("\n"); // combine all scores into a single string
+
+      messages.push({
+        role: "system",
+        content: `Scores:\n${scoreLines}`,
+        className: "score-box", // you can style this differently if you want
       });
     }
 
-    // Add performance analysis with better score formatting
-    if (response.performance_analysis) {
-      response.performance_analysis.forEach(([label, content]) => {
-        if (label === "Scores:") {
-          messages.push({ role: "ai", content: "Assessment Scores:" });
-          // Split and format each score
-          const scores = content.split("\n");
-          scores.forEach((score) => {
-            if (score.trim()) {
-              messages.push({
-                role: "ai",
-                content: score.trim(),
-                className: "score-item",
-              });
-            }
-          });
-        } else if (label === "Detailed Feedback:") {
-          // Split detailed feedback into separate messages
-          const feedbackLines = content.split("\n");
-          feedbackLines.forEach((line) => {
-            if (line.trim()) {
-              messages.push({
-                role: "ai",
-                content: line.trim(),
-                className: "feedback-item",
-              });
-            }
-          });
-        } else {
-          messages.push({ role: "ai", content: `${label} ${content}` });
+    // // 3. Add Feedback
+    // if (response.feedback) {
+    //   messages.push({
+    //     role: "ai",
+    //     content: "Detailed Feedback:",
+    //     className: "feedback-header",
+    //   });
+    //   const feedbackLines = response.feedback.split("\n");
+    //   feedbackLines.forEach((line) => {
+    //     if (line.trim()) {
+    //       messages.push({
+    //         role: "ai",
+    //         content: line.trim(),
+    //         className: "feedback-item",
+    //       });
+    //     }
+    //   });
+    // }
+
+    // Add suggestions if present
+    if (response.Suggestions) {
+      const suggestionLines = response.Suggestions.split("\n")
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0);
+
+      let revisedVersion = "";
+      let bulletPoints = [];
+
+      suggestionLines.forEach((line) => {
+        if (line.startsWith("Here's a revised version")) {
+          revisedVersion += `${line}`;
+        } else if (line.startsWith('"') || revisedVersion.endsWith(":")) {
+          // If the next line is the actual revised content
+          revisedVersion += `\n${line}`;
+        } else if (line.startsWith("- ") || line.startsWith("• - ")) {
+          bulletPoints.push(`• ${line.replace(/^•?\s*- /, "")}`);
         }
       });
+
+      if (revisedVersion) {
+        messages.push({
+          role: "system",
+          content: `Suggestions:\n${revisedVersion}`,
+          className: "suggestion-box",
+        });
+      }
+
+      if (bulletPoints.length > 0) {
+        messages.push({
+          role: "system",
+          content: `Suggestions:\n${bulletPoints.join("\n")}`,
+          className: "suggestion-box",
+        });
+      }
     }
 
-    // Add interview questions with better formatting
+    // 5. Add Follow-up Questions
     if (
-      response.interview_questions &&
-      response.interview_questions !== "No questions generated"
+      response["Follow-up Questions"] &&
+      response["Follow-up Questions"] !== "No questions generated"
     ) {
       messages.push({
         role: "ai",
@@ -325,29 +425,23 @@ export default function ChatInterface({ onSubmitText }) {
         className: "question-header",
       });
 
-      // Handle both array and string formats
-      if (Array.isArray(response.interview_questions)) {
-        response.interview_questions.forEach((question, index) => {
-          messages.push({
-            role: "ai",
-            content: `${index + 1}. ${question}`,
-            className: "question-item",
-          });
-        });
+      let questions = [];
+      if (Array.isArray(response["Follow-up Questions"])) {
+        questions = response["Follow-up Questions"];
       } else {
-        // Split string into individual questions if it's a string
-        const questions = response.interview_questions
+        // If it's a string, split by numbered pattern
+        questions = response["Follow-up Questions"]
           .split(/\d+\.\s+/)
           .filter((q) => q.trim());
-
-        questions.forEach((question, index) => {
-          messages.push({
-            role: "ai",
-            content: `${index + 1}. ${question.trim()}`,
-            className: "question-item",
-          });
-        });
       }
+
+      questions.forEach((question, index) => {
+        messages.push({
+          role: "system",
+          content: `${index + 1}. ${question.trim()}`,
+          className: "question-item",
+        });
+      });
     }
 
     console.log("Processed messages:", messages); // Debug log
@@ -424,6 +518,7 @@ export default function ChatInterface({ onSubmitText }) {
                   <span className="text-white text-sm">AI</span>
                 </div>
               )}
+              {message.role === "ai" && <div className="w-8 h-8"></div>}
               <div
                 className={`max-w-[70%] p-4 rounded-2xl ${
                   message.role === "user"
