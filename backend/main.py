@@ -14,14 +14,14 @@ import plotly.express as px
 from datetime import datetime
 import os
 import logging
-from pydub import AudioSegment
-import io
-import subprocess
 import base64
-from concurrent.futures import ThreadPoolExecutor
-import asyncio
+from io import BytesIO
+import base64
 import tempfile
 from pymongo import MongoClient
+import matplotlib
+
+matplotlib.use('Agg')
 
 # Connect to MongoDB
 MONGO_URI = "mongodb+srv://vaibhav22210180:gMnJlkXIweLe9AA1@cluster0.wye6h.mongodb.net/"
@@ -63,47 +63,83 @@ class CommunicationAssessmentApp:
         # self.pronunciation_analyzer = PronunciationAnalyzer()
         # self.report_generator = ReportGenerator()
 
-#     def create_radar_chart(self, scores):
-#         """Create interactive radar chart using plotly"""
-#         categories = ['Pronunciation', 'Grammar', 'Vocabulary', 'Fluency']
-        
-#         fig = go.Figure()
-#         fig.add_trace(go.Scatterpolar(
-#             r=scores + [scores[0]],
-#             theta=categories + [categories[0]],
-#             fill='toself',
-#             name='Skills Assessment'
-#         ))
-        
-#         fig.update_layout(
-#             polar=dict(
-#                 radialaxis=dict(
-#                     visible=True,
-#                     range=[0, 1]
-#                 )),
-#             showlegend=False,
-#             title="Communication Skills Assessment"
-#         )
-#         return fig
+    def create_radar_chart(self, scores_dict):
+        """Create fast radar chart and return base64-encoded image for HTML embedding, with score labels shown."""
+        categories = ['Grammar', 'Vocabulary', 'Fluency', 'Coherence']
+        values = [
+            scores_dict.get('Grammar', 0),
+            scores_dict.get('Vocabulary', 0),
+            scores_dict.get('Fluency', 0),
+            scores_dict.get('Coherence', 0)
+        ]
 
-#     def create_vocabulary_chart(self, vocab_data):
-#         """Create interactive bar chart for vocabulary metrics"""
-#         metrics = ['Lexical Diversity', 'Sophistication', 'Context Score']
-#         values = [
-#             vocab_data['lexical_diversity'],
-#             vocab_data['sophistication'],
-#             vocab_data['context_appropriateness']
-#         ]
+        values += values[:1]  # loop back to start
+        angles = np.linspace(0, 2 * np.pi, len(categories), endpoint=False).tolist()
+        angles += angles[:1]
+
+        fig, ax = plt.subplots(figsize=(4, 4), subplot_kw=dict(polar=True))
+        ax.plot(angles, values, linewidth=2, linestyle='solid', color='blue')
+        ax.fill(angles, values, color='skyblue', alpha=0.4)
+
+        ax.set_xticks(angles[:-1])
+        ax.set_xticklabels(categories, fontsize=10, color='white')
+
+        ax.set_yticklabels([])  # hide radial labels
+        ax.set_ylim(0, 1)
+
+        # Add score labels at each point
+        for angle, value in zip(angles, values):
+            ax.text(
+                angle,
+                value + 0.05,  # slightly offset from the point
+                f"{value:.2f}",
+                ha='center',
+                va='center',
+                fontsize=9,
+                color='white',
+                fontweight='bold'
+            )
+
+        buf = BytesIO()
+        plt.tight_layout()
+        fig.patch.set_facecolor('#1f2937')  # match Tailwind's bg-gray-900
+        ax.set_facecolor('#1f2937')
+        plt.savefig(buf, format='jpeg', bbox_inches='tight')
+        plt.close(fig)
+        buf.seek(0)
+        return base64.b64encode(buf.read()).decode('utf-8')
+
+    def create_vocab_chart(self, vocab_data):
+        """Create interactive bar chart for vocabulary metrics using matplotlib"""
+        metrics = ['Lexical Diversity', 'Sophistication', 'Context Score']
+        values = [
+            vocab_data['lexical_diversity'],
+            vocab_data['sophistication'],
+            vocab_data['context_appropriateness']
+        ]
+
+        # Create a bar chart with matplotlib
+        fig, ax = plt.subplots(figsize=(6, 4))
+        ax.bar(metrics, values, color='skyblue')
         
-#         fig = px.bar(
-#             x=metrics,
-#             y=values,
-#             title="Vocabulary Analysis",
-#             labels={'x': 'Metrics', 'y': 'Score'},
-#             color=values,
-#             color_continuous_scale='viridis'
-#         )
-#         return fig
+        # Adding score values on top of the bars
+        for i, value in enumerate(values):
+            ax.text(i, value + 0.02, f'{value:.2f}', ha='center', va='bottom', fontsize=12)
+
+        ax.set_title("Vocabulary Analysis")
+        ax.set_xlabel("Metrics")
+        ax.set_ylabel("Score")
+        ax.set_ylim(0, 1)
+
+        # Convert the plot to a base64-encoded image for HTML embedding
+        buf = BytesIO()
+        plt.tight_layout()
+        plt.savefig(buf, format='png')
+        buf.seek(0)
+        vocab_base64 = base64.b64encode(buf.read()).decode('utf-8')
+        plt.close(fig)
+
+        return vocab_base64
 
 #     def process_input(self, audio_file):
 #         MONGO_URI = "mongodb+srv://vaibhav22210180:gMnJlkXIweLe9AA1@cluster0.wye6h.mongodb.net/"  # Update with your MongoDB URI if hosted remotely
@@ -298,43 +334,67 @@ class CommunicationAssessmentApp:
             assessment_app = CommunicationAssessmentApp()
             chat_history = assessment_app.speech_processor.process_text(data['text'])
             
+            # Debugging: Print the structure of chat_history
+            print(f"Chat History: {chat_history}")
+            
             if not chat_history or len(chat_history) < 1:
                 raise ValueError("Invalid text processing result")
             
-            # Extract data from chat_history (same format as speech)
-            input_text = chat_history[0][1]      # Input text
-            grammar_analysis = chat_history[1][1] # Grammar analysis
-            corrected_text = chat_history[2][1]   # Corrected version
-            scores_text = chat_history[3][1]      # All scores
-            detailed_feedback = chat_history[4][1] # Detailed feedback
-            improvement = chat_history[5][1]      # Improvement suggestion
-            questions = chat_history[6][1]        # Interview questions
-            
-            report = f"""Communication Assessment Report
-Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+            # Check the structure of chat_history
+            if isinstance(chat_history[0], tuple):  # If it's a list of tuples
+                input_text = chat_history[0][1]      # Input text
+                grammar_analysis = chat_history[1][1] # Grammar analysis
+                corrected_text = chat_history[2][1]   # Corrected version
+                scores_text = chat_history[3][1]      # All scores
+                detailed_feedback = chat_history[4][1] # Detailed feedback
+                improvement = chat_history[5][1]      # Improvement suggestion
+                questions = chat_history[6][1]        # Interview questions
 
-INPUT TEXT:
-{input_text}
+                # Extract vocabulary data from the analysis
+                vocab_data = chat_history[7][1] if len(chat_history) > 7 else {}
+            else:
+                # If chat_history is not in the expected tuple format, handle accordingly
+                return jsonify({'error': 'Unexpected structure of chat_history'}), 400
 
-ANALYSIS
-{scores_text}
-
-DETAILED FEEDBACK:
-{detailed_feedback}
-
-SUGGESTIONS:
-{improvement}
-
-FOLLOW-UP QUESTIONS:
-{questions}
-"""
-            
             # Parse scores
             scores = {}
             for line in scores_text.split('\n'):
                 if ':' in line:
                     key, value = line.split(':')
                     scores[key.strip()] = float(value.strip())
+            
+            # Radar chart as base64 image
+            radar_base64 = assessment_app.create_radar_chart(scores)
+            
+            # Vocabulary chart (base64 image)
+            vocab_chart_base64 = assessment_app.create_vocab_chart(vocab_data)
+
+            # Generate the report with the new vocabulary chart
+            report = f"""
+    <h2 style="margin-top: 30px;">Communication Assessment Report</h2>
+    <p><strong>Generated:</strong> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
+
+    <h3 style="margin-top: 20px;">Input Text</h3>
+    <p>{input_text}</p>
+
+    <h3 style="margin-top: 20px;">Analysis</h3>
+    <pre style="white-space: pre-wrap; font-size: 14px;">{scores_text}</pre>
+
+    <h3 style="margin-top: 20px;">Radar Chart</h3>
+    <img src="data:image/png;base64,{radar_base64}" alt="Radar Chart" width="500" style="margin: 10px 0;" />
+
+    <h3 style="margin-top: 20px;">Vocabulary Chart</h3>
+    <img src="data:image/png;base64,{vocab_chart_base64}" alt="Vocabulary Chart" width="500" style="margin: 10px 0;" />
+
+    <h3 style="margin-top: 20px;">Detailed Feedback</h3>
+    <p>{detailed_feedback}</p>
+
+    <h3 style="margin-top: 20px;">Suggestions</h3>
+    <p>{improvement}</p>
+
+    <h3 style="margin-top: 20px;">Follow-up Questions</h3>
+    <p>{questions}</p>
+    """
 
             result = {
                 'language_analysis': [
@@ -351,10 +411,10 @@ FOLLOW-UP QUESTIONS:
                 'report': report
             }
 
-            # MONGO_URI = "mongodb+srv://vaibhav22210180:gMnJlkXIweLe9AA1@cluster0.wye6h.mongodb.net/"  # Update with your MongoDB URI if hosted remotely
+            # Save to MongoDB
             client = MongoClient(MONGO_URI)
-            db = client["communication_assessment"]  # Database Name
-            collection = db["queries"]  # Collection Name
+            db = client["communication_assessment"]
+            collection = db["queries"]
 
             query_data = {
                 "timestamp": datetime.now().isoformat(),
@@ -395,12 +455,12 @@ FOLLOW-UP QUESTIONS:
             audio_file.save(audio_path)
 
             assessment_app = CommunicationAssessmentApp()
-            
+
             # Get speech analysis
             chat_history = assessment_app.speech_processor.process_audio(audio_path)
             if not chat_history or len(chat_history) < 1:
                 raise ValueError("Invalid speech processing result")
-            
+
             # Extract data from chat_history
             transcribed_text = chat_history[0][1]  # Input text
             grammar_analysis = chat_history[1][1]  # Grammar analysis
@@ -409,32 +469,49 @@ FOLLOW-UP QUESTIONS:
             detailed_feedback = chat_history[4][1]  # Detailed feedback
             improvement = chat_history[5][1]        # Improvement suggestion
             questions = chat_history[6][1] if len(chat_history) > 6 else "No questions generated"
-            
-            report = f"""Communication Assessment Report
-Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 
-TRANSCRIPTION:
-{transcribed_text}
+            # Extract vocabulary data from the analysis
+            vocab_data = chat_history[7][1] if len(chat_history) > 7 else {}
 
-ANALYSIS
-{scores_text}
-
-DETAILED FEEDBACK:
-{detailed_feedback}
-
-SUGGESTIONS:
-{improvement}
-
-FOLLOW-UP QUESTIONS:
-{questions}
-"""
-            
             # Parse scores
             scores = {}
             for line in scores_text.split('\n'):
                 if ':' in line:
                     key, value = line.split(':')
                     scores[key.strip()] = float(value.strip())
+
+            # Radar chart as base64 image
+            radar_base64 = assessment_app.create_radar_chart(scores)
+            
+            # Vocabulary chart (base64 image)
+            vocab_chart_base64 = assessment_app.create_vocab_chart(vocab_data)
+
+            # Generate the report with the new vocabulary chart
+            report = f"""
+    <h2 style="margin-top: 30px;">Communication Assessment Report</h2>
+    <p><strong>Generated:</strong> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
+
+    <h3 style="margin-top: 20px;">Transcribed Text</h3>
+    <p>{transcribed_text}</p>
+
+    <h3 style="margin-top: 20px;">Analysis</h3>
+    <pre style="white-space: pre-wrap; font-size: 14px;">{scores_text}</pre>
+
+    <h3 style="margin-top: 20px;">Radar Chart</h3>
+    <img src="data:image/png;base64,{radar_base64}" alt="Radar Chart" width="500" style="margin: 10px 0;" />
+
+    <h3 style="margin-top: 20px;">Vocabulary Chart</h3>
+    <img src="data:image/png;base64,{vocab_chart_base64}" alt="Vocabulary Chart" width="500" style="margin: 10px 0;" />
+
+    <h3 style="margin-top: 20px;">Detailed Feedback</h3>
+    <p>{detailed_feedback}</p>
+
+    <h3 style="margin-top: 20px;">Suggestions</h3>
+    <p>{improvement}</p>
+
+    <h3 style="margin-top: 20px;">Follow-up Questions</h3>
+    <p>{questions}</p>
+    """
 
             result = {
                 'language_analysis': [
@@ -450,11 +527,11 @@ FOLLOW-UP QUESTIONS:
                 'interview_questions': questions,
                 'report': report
             }
-            
-            # MONGO_URI = "mongodb+srv://vaibhav22210180:gMnJlkXIweLe9AA1@cluster0.wye6h.mongodb.net/"  # Update with your MongoDB URI if hosted remotely
+
+            # Save to MongoDB
             client = MongoClient(MONGO_URI)
-            db = client["communication_assessment"]  # Database Name
-            collection = db["queries"]  # Collection Name
+            db = client["communication_assessment"]
+            collection = db["queries"]
 
             query_data = {
                 "timestamp": datetime.now().isoformat(),

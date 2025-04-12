@@ -177,6 +177,9 @@ class SpeechProcessor:
             chatbot_feedback = self.get_groq_feedback(text)
             interview_questions = self.generate_interview_questions(text)
 
+            # Extract vocabulary data from the analysis (passed from analyze_text)
+            vocab_data = scores.get('vocab_data', {})
+
             # Debug print
             print("Scores generated:", scores)
             print("Detailed feedback:", scores['detailed_feedback'])
@@ -186,18 +189,20 @@ class SpeechProcessor:
             if mistakes:
                 detailed_feedback.append(f"Specific issues: {', '.join(mistakes)}")
 
+            # Build the final result (include vocabulary scores and metrics)
             result = [
                 ("Input:", text),
                 ("Grammar Analysis:", grammar_feedback),
                 ("Corrected Version:", self.grammar_checker(text)[0]['generated_text'] if self.grammar_checker else text),
                 ("Scores:", f"""Grammar: {scores['grammar_score']:.2f}
-Vocabulary: {scores['vocabulary_score']:.2f}
-Fluency: {scores['fluency_score']:.2f}
-Coherence: {scores['coherence_score']:.2f}
-Overall: {scores['overall_score']:.2f}"""),
+    Vocabulary: {scores['vocabulary_score']:.2f}
+    Fluency: {scores['fluency_score']:.2f}
+    Coherence: {scores['coherence_score']:.2f}
+    Overall: {scores['overall_score']:.2f}"""),
                 ("Detailed Feedback:", "\n".join(detailed_feedback)),
                 ("Improvement Suggestion:", chatbot_feedback),
-                ("Interview Questions:", "\n".join(f"{i+1}. {q}" for i, q in enumerate(interview_questions)))
+                ("Interview Questions:", "\n".join(f"{i+1}. {q}" for i, q in enumerate(interview_questions))),
+                ("Vocabulary Analysis:", vocab_data)
             ]
 
             # Debug print

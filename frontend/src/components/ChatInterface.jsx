@@ -614,50 +614,10 @@ export default function ChatInterface({ onSubmitText }) {
                 </button>
               </div>
 
-              <pre className="whitespace-pre-wrap text-sm text-gray-300 mb-6">
-                {report}
-              </pre>
-
-              {result?.charts && (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-4">
-                  {result.charts.radar && (
-                    <div className="bg-gray-800 p-4 rounded-lg">
-                      <h4 className="text-lg font-medium mb-2">
-                        Skills Assessment
-                      </h4>
-                      <div className="relative">
-                        <img
-                          src={`data:image/png;base64,${result.charts.radar}`}
-                          alt="Skills Radar Chart"
-                          className="w-full"
-                          onError={(e) => {
-                            console.error("Error loading radar chart");
-                            e.target.style.display = "none";
-                          }}
-                        />
-                      </div>
-                    </div>
-                  )}
-                  {result.charts.vocabulary && (
-                    <div className="bg-gray-800 p-4 rounded-lg">
-                      <h4 className="text-lg font-medium mb-2">
-                        Vocabulary Analysis
-                      </h4>
-                      <div className="relative">
-                        <img
-                          src={`data:image/png;base64,${result.charts.vocabulary}`}
-                          alt="Vocabulary Analysis Chart"
-                          className="w-full"
-                          onError={(e) => {
-                            console.error("Error loading vocabulary chart");
-                            e.target.style.display = "none";
-                          }}
-                        />
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
+              <div
+                className="prose prose-invert text-sm text-gray-300 mb-6"
+                dangerouslySetInnerHTML={{ __html: report }}
+              />
             </div>
           </div>
         )}
